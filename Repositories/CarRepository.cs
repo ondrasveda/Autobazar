@@ -14,7 +14,25 @@ public class CarRepository : ICarRepository
 
     public void PridejAuto(Auto auto)
     {
-        //pridat logiku
+        using (var connection = new MySqlConnection(_connectionString))
+        {
+            connection.Open();
+            string query = "INSERT INTO auta (znacka_id, model, najezd_km, je_skladem, stav, cena, datum_prijeti) " +
+                           "VALUES (@znacka, @model, @najezd, @skladem, @stav, @cena, @datum)";
+        
+            using (var cmd = new MySqlCommand(query, connection))
+            {
+                cmd.Parameters.AddWithValue("@znacka", 1); // Pro testování fixní značka
+                cmd.Parameters.AddWithValue("@model", auto.Model);
+                cmd.Parameters.AddWithValue("@najezd", auto.NajezdKm);
+                cmd.Parameters.AddWithValue("@skladem", auto.JeSkladem);
+                cmd.Parameters.AddWithValue("@stav", auto.Stav.ToString());
+                cmd.Parameters.AddWithValue("@cena", auto.Cena);
+                cmd.Parameters.AddWithValue("@datum", DateTime.Now);
+
+                cmd.ExecuteNonQuery();
+            }
+        }
     }
 
     public List<Auto> GetVsechnaSkladem()
