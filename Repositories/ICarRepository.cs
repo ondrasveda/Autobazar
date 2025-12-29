@@ -1,10 +1,11 @@
 using AutobazarPV.Models;
+using System.Collections.Generic;
 
 namespace AutobazarPV.Repositories;
 
 public interface ICarRepository
 {
-    void PridejAuto(Auto auto);
     List<Auto> GetVsechnaSkladem();
-    void ProdejAutaTransakce(int autoId, string jmenoZakaznika);
+    void ProdejAutaTransakce(int autoId, string zakaznikJmeno);
+    void PridejAuto(Auto auto, int znackaId);
 }

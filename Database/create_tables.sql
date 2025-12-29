@@ -27,4 +27,3 @@ CREATE TABLE prodeje (
 );
 
 
-INSERT INTO znacky (nazev) VALUES ('Škoda'), ('Volkswagen'), ('Toyota'), ('BMW');
