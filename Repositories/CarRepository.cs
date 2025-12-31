@@ -1,5 +1,9 @@
 using MySql.Data.MySqlClient;
 using AutobazarPV.Models;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
 
 namespace AutobazarPV.Repositories;
 
@@ -12,82 +16,131 @@ public class CarRepository : ICarRepository
         _connectionString = connectionString;
     }
 
-    public void PridejAuto(Auto auto, int znackaId)
+    public List<Auto> GetVsechnaSkladem()
+    {
+        var seznam = new List<Auto>();
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        string sql = "SELECT id, model, cena FROM auta WHERE je_skladem = 1";
+        using var cmd = new MySqlCommand(sql, conn);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            seznam.Add(new Auto {
+                Id = reader.GetInt32("id"),
+                Model = reader.GetString("model"),
+                Cena = reader.GetDecimal("cena")
+            });
+        }
+        return seznam;
+    }
+
+    public void PridejAutoSVybavou(Auto auto, string nazevZnacky, int vybavaId)
     {
         using var conn = new MySqlConnection(_connectionString);
         conn.Open();
-        string sql = "INSERT INTO auta (znacka_id, model, najezd_km, je_skladem, stav, cena, datum_prijeti) " +
-                     "VALUES (@zid, @mod, @naj, 1, @stav, @cena, NOW())";
-    
+        using var trans = conn.BeginTransaction();
+        try {
+            string sqlZnacka = "INSERT IGNORE INTO znacky (nazev) VALUES (@zn); SELECT id FROM znacky WHERE nazev = @zn;";
+            var cmdZ = new MySqlCommand(sqlZnacka, conn, trans);
+            cmdZ.Parameters.AddWithValue("@zn", nazevZnacky);
+            int znackaId = Convert.ToInt32(cmdZ.ExecuteScalar());
+
+            string sqlAuto = "INSERT INTO auta (znacka_id, model, najezd_km, je_skladem, stav, cena, datum_prijeti) " +
+                             "VALUES (@zid, @m, @n, 1, 'Ojete', @c, NOW()); SELECT LAST_INSERT_ID();";
+            var cmdA = new MySqlCommand(sqlAuto, conn, trans);
+            cmdA.Parameters.AddWithValue("@zid", znackaId);
+            cmdA.Parameters.AddWithValue("@m", auto.Model);
+            cmdA.Parameters.AddWithValue("@n", auto.Najezd);
+            cmdA.Parameters.AddWithValue("@c", auto.Cena);
+            int noveId = Convert.ToInt32(cmdA.ExecuteScalar());
+
+            string sqlVyb = "INSERT INTO auto_vybaveni (auto_id, vybaveni_id) VALUES (@aid, @vid)";
+            var cmdV = new MySqlCommand(sqlVyb, conn, trans);
+            cmdV.Parameters.AddWithValue("@aid", noveId);
+            cmdV.Parameters.AddWithValue("@vid", vybavaId);
+            cmdV.ExecuteNonQuery();
+
+            trans.Commit();
+        } catch { trans.Rollback(); throw; }
+    }
+
+    public void ProdejAutaTransakce(int autoId, string zakaznikJmeno, int zamestnanecId = 1)
+    {
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        using var trans = conn.BeginTransaction();
+        try {
+            string sqlCena = "SELECT cena FROM auta WHERE id = @id AND je_skladem = 1";
+            var cmdC = new MySqlCommand(sqlCena, conn, trans);
+            cmdC.Parameters.AddWithValue("@id", autoId);
+            object res = cmdC.ExecuteScalar();
+            if (res == null) throw new Exception("Auto není skladem nebo neexistuje!");
+            decimal cena = Convert.ToDecimal(res);
+
+            new MySqlCommand($"UPDATE auta SET je_skladem = 0 WHERE id = {autoId}", conn, trans).ExecuteNonQuery();
+
+            string sqlIns = "INSERT INTO prodeje (auto_id, zamestnanec_id, zakaznik_jmeno, prodejni_cena) VALUES (@aid, @zid, @zak, @p)";
+            var cmdI = new MySqlCommand(sqlIns, conn, trans);
+            cmdI.Parameters.AddWithValue("@aid", autoId);
+            cmdI.Parameters.AddWithValue("@zid", zamestnanecId);
+            cmdI.Parameters.AddWithValue("@zak", zakaznikJmeno);
+            cmdI.Parameters.AddWithValue("@p", cena);
+            cmdI.ExecuteNonQuery();
+
+            trans.Commit();
+            File.AppendAllText("prodeje_log.txt", $"{DateTime.Now}: Prodáno ID {autoId}.\n");
+        } catch { trans.Rollback(); throw; }
+    }
+
+    public void SmazAuto(int id)
+    {
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        string sql = "DELETE FROM auta WHERE id = @id";
         using var cmd = new MySqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@zid", znackaId);
-        cmd.Parameters.AddWithValue("@mod", auto.Model);
-        cmd.Parameters.AddWithValue("@naj", auto.NajezdKm);
-        cmd.Parameters.AddWithValue("@stav", auto.Stav.ToString());
-        cmd.Parameters.AddWithValue("@cena", auto.Cena);
-    
-        cmd.ExecuteNonQuery();
+        cmd.Parameters.AddWithValue("@id", id);
+        if (cmd.ExecuteNonQuery() == 0) throw new Exception("Auto s tímto ID neexistuje.");
     }
 
-    public void ProdejAutaTransakce(int autoId, string zakaznikJmeno)
-{
-    using var conn = new MySqlConnection(_connectionString);
-    conn.Open();
-    using var transakce = conn.BeginTransaction();
-
-    try
+    public void GenerujSouhrnnyReport()
     {
-        string sqlCena = "SELECT cena FROM auta WHERE id = @id AND je_skladem = 1";
-        using var cmdCena = new MySqlCommand(sqlCena, conn, transakce);
-        cmdCena.Parameters.AddWithValue("@id", autoId);
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        string sql = @"SELECT z.nazev, COUNT(a.id) as Pocet, COALESCE(SUM(p.prodejni_cena),0) as Obrat 
+                       FROM znacky z LEFT JOIN auta a ON z.id = a.znacka_id 
+                       LEFT JOIN prodeje p ON a.id = p.auto_id GROUP BY z.nazev";
+        using var reader = new MySqlCommand(sql, conn).ExecuteReader();
         
-        object result = cmdCena.ExecuteScalar();
-        if (result == null) 
+        Console.WriteLine("\n--- REPORT DLE ZNAČEK ---");
+        while (reader.Read()) 
+            Console.WriteLine($"{reader["nazev"],-15} | Aut: {reader["Pocet"],-3} | Obrat: {reader["Obrat"]:N0} Kč");
+    }
+
+    public void ImportAutZJson(string cesta)
+    {
+        if (!File.Exists(cesta)) throw new FileNotFoundException($"Soubor {cesta} nebyl nalezen.");
+        
+        string jsonContent = File.ReadAllText(cesta);
+        var data = JsonSerializer.Deserialize<List<AutoImportModel>>(jsonContent);
+
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        foreach (var item in data)
         {
-            throw new Exception("Auto neexistuje nebo je jiz prodane!");
+            string sqlZ = "INSERT IGNORE INTO znacky (nazev) VALUES (@n); SELECT id FROM znacky WHERE nazev = @n;";
+            var cmdZ = new MySqlCommand(sqlZ, conn);
+            cmdZ.Parameters.AddWithValue("@n", item.NazevZnacky);
+            int znackaId = Convert.ToInt32(cmdZ.ExecuteScalar());
+
+            string sqlA = "INSERT INTO auta (znacka_id, model, najezd_km, cena, je_skladem, stav, datum_prijeti) " +
+                          "VALUES (@zid, @m, @naj, @c, 1, 'Ojete', NOW())";
+            var cmdA = new MySqlCommand(sqlA, conn);
+            cmdA.Parameters.AddWithValue("@zid", znackaId);
+            cmdA.Parameters.AddWithValue("@m", item.Model);
+            cmdA.Parameters.AddWithValue("@naj", item.Najezd);
+            cmdA.Parameters.AddWithValue("@c", item.Cena);
+            cmdA.ExecuteNonQuery();
         }
-        decimal aktualniCena = Convert.ToDecimal(result);
-
-        string sqlUpdate = "UPDATE auta SET je_skladem = 0 WHERE id = @id";
-        using var cmdUpdate = new MySqlCommand(sqlUpdate, conn, transakce);
-        cmdUpdate.Parameters.AddWithValue("@id", autoId);
-        cmdUpdate.ExecuteNonQuery();
-
-        string sqlInsert = "INSERT INTO prodeje (auto_id, zakaznik_jmeno, prodejni_cena, datum_prodeje) " +
-                           "VALUES (@aid, @zak, @cena, NOW())";
-        using var cmdInsert = new MySqlCommand(sqlInsert, conn, transakce);
-        cmdInsert.Parameters.AddWithValue("@aid", autoId);
-        cmdInsert.Parameters.AddWithValue("@zak", zakaznikJmeno);
-        cmdInsert.Parameters.AddWithValue("@cena", aktualniCena);
-        cmdInsert.ExecuteNonQuery();
-
-        transakce.Commit();
     }
-    catch (Exception ex)
-    {
-        transakce.Rollback();
-        throw new Exception("Transakce selhala: " + ex.Message);
-    }
-}
-
-public List<Auto> GetVsechnaSkladem()
-{
-    var seznam = new List<Auto>();
-    using var conn = new MySqlConnection(_connectionString);
-    conn.Open();
-    
-    string sql = "SELECT id, model, cena FROM auta WHERE je_skladem = 1";
-    using var cmd = new MySqlCommand(sql, conn);
-    using var reader = cmd.ExecuteReader();
-    
-    while (reader.Read())
-    {
-        seznam.Add(new Auto {
-            Id = reader.GetInt32("id"),
-            Model = reader.GetString("model"),
-            Cena = reader.GetDecimal("cena")
-        });
-    }
-    return seznam;
-}
 }

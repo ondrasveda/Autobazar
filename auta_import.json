@@ -1,0 +1,14 @@
+[
+  {
+    "NazevZnacky": "Tesla",
+    "Model": "Model S",
+    "Najezd": 12000.5,
+    "Cena": 1450000
+  },
+  {
+    "NazevZnacky": "Volkswagen",
+    "Model": "Passat B8",
+    "Najezd": 95000.0,
+    "Cena": 390000
+  }
+]
