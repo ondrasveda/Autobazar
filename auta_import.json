@@ -1,9 +1,9 @@
 [
   {
-    "NazevZnacky": "Tesla",
-    "Model": "Model S",
-    "Najezd": 12000.5,
-    "Cena": 1450000
+    "NazevZnacky": "BMW",
+    "Model": "E46 320d",
+    "Najezd": 320000.5,
+    "Cena": 14500
   },
   {
     "NazevZnacky": "Volkswagen",

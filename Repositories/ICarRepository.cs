@@ -1,5 +1,4 @@
 using AutobazarPV.Models;
-using System.Collections.Generic;
 
 namespace AutobazarPV.Repositories;
 
@@ -11,4 +10,9 @@ public interface ICarRepository
     void SmazAuto(int id);
     void GenerujSouhrnnyReport();
     void ImportAutZJson(string cesta);
+    List<Zamestnanec> GetProdejci();
+    void PridejServis(int autoId, string popis, decimal cena);
+    void VypisVykonZamestnancuView();
+    void AktualizujAutoIZnacku(int autoId, string novyModel, string novyNazevZnacky);
+    void VypisServisniHistoriiView();   
 }

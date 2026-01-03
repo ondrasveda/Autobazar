@@ -1,3 +1,6 @@
+create database autobazar;
+use autobazar;
+
 CREATE TABLE znacky (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nazev VARCHAR(50) NOT NULL
@@ -54,3 +57,23 @@ CREATE TABLE servisni_zaznamy (
     cena_opravy DECIMAL(10, 2),
     FOREIGN KEY (auto_id) REFERENCES auta(id) ON DELETE CASCADE
 );
+
+CREATE VIEW v_vykon_zamestnancu AS
+SELECT
+    z.jmeno,
+    z.prijmeni,
+    COUNT(p.id) AS pocet_prodeju,
+    SUM(p.prodejni_cena) AS celkova_trzba
+FROM zamestnanci z
+         LEFT JOIN prodeje p ON z.id = p.zamestnanec_id
+GROUP BY z.id;
+
+CREATE VIEW v_servisni_historie_skladem AS
+SELECT
+    a.model,
+    s.popis_opravy,
+    s.cena_opravy,
+    s.datum_servisu
+FROM auta a
+         JOIN servisni_zaznamy s ON a.id = s.auto_id
+WHERE a.je_skladem = 1;

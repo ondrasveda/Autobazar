@@ -143,4 +143,76 @@ public class CarRepository : ICarRepository
             cmdA.ExecuteNonQuery();
         }
     }
+    
+    public List<Zamestnanec> GetProdejci() {
+        var list = new List<Zamestnanec>();
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+                    using var cmd = new MySqlCommand("SELECT id, jmeno, prijmeni FROM zamestnanci", conn);
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) {
+            list.Add(new Zamestnanec { Id = r.GetInt32(0), Jmeno = r.GetString(1), Prijmeni = r.GetString(2) });
+        }
+        return list;
+    }
+
+    public void VypisVykonZamestnancuView() {
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        using var cmd = new MySqlCommand("SELECT * FROM v_vykon_zamestnancu", conn);
+        using var r = cmd.ExecuteReader();
+        Console.WriteLine("\n--- STATISTIKY PRODEJCŮ (SQL VIEW) ---");
+        while (r.Read()) {
+            Console.WriteLine($"{r["jmeno"]} {r["prijmeni"]}: {r["pocet_prodeju"]} prodaných aut | Tržba: {r["celkova_trzba"]} Kč");
+        }
+    }
+    
+    public void PridejServis(int autoId, string popis, decimal cena) {
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        string sql = "INSERT INTO servisni_zaznamy (auto_id, popis_opravy, datum_servisu, cena_opravy) VALUES (@aid, @p, NOW(), @c)";
+        using var cmd = new MySqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@aid", autoId);
+        cmd.Parameters.AddWithValue("@p", popis);
+        cmd.Parameters.AddWithValue("@c", cena);
+        cmd.ExecuteNonQuery();
+    }
+    
+    public void AktualizujAutoIZnacku(int autoId, string novyModel, string novyNazevZnacky)
+    {
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        using var trans = conn.BeginTransaction();
+        try {
+            string sqlZ = "UPDATE znacky SET nazev = @n WHERE id = (SELECT znacka_id FROM auta WHERE id = @aid)";
+            var cmdZ = new MySqlCommand(sqlZ, conn, trans);
+            cmdZ.Parameters.AddWithValue("@n", novyNazevZnacky);
+            cmdZ.Parameters.AddWithValue("@aid", autoId);
+            cmdZ.ExecuteNonQuery();
+
+            string sqlA = "UPDATE auta SET model = @m WHERE id = @aid";
+            var cmdA = new MySqlCommand(sqlA, conn, trans);
+            cmdA.Parameters.AddWithValue("@m", novyModel);
+            cmdA.Parameters.AddWithValue("@aid", autoId);
+            cmdA.ExecuteNonQuery();
+
+            trans.Commit();
+        } catch { trans.Rollback(); throw; }
+    }
+    
+    public void VypisServisniHistoriiView()
+    {
+        using var conn = new MySqlConnection(_connectionString);
+        conn.Open();
+        string sql = "SELECT * FROM v_servisni_historie_skladem";
+        using var cmd = new MySqlCommand(sql, conn);
+        using var r = cmd.ExecuteReader();
+
+        Console.WriteLine("\n--- HISTORIE SERVISU (AUTA SKLADEM) ---");
+        if (!r.HasRows) Console.WriteLine("Žádné záznamy k zobrazení.");
+    
+        while (r.Read()) {
+            Console.WriteLine($"Vůz: {r["model"],-15} | Oprava: {r["popis_opravy"],-25} | Cena: {r["cena_opravy"]} Kč");
+        }
+    }
 }
