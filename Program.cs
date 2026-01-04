@@ -157,7 +157,7 @@ class Program
 
     static void ImportDat(ICarRepository repo) {
         Console.WriteLine("\n--- IMPORT Z JSON ---");
-        string cesta = Path.Combine(AppContext.BaseDirectory, "Configuration", "auta_import.json");
+        string cesta = Path.Combine(AppContext.BaseDirectory, "auta_import.json");
         repo.ImportAutZJson(cesta);
         Console.WriteLine("Import proběhl úspěšně.");
         Console.ReadKey();
